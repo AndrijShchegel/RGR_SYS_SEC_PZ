@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 import socket
 import threading
 from cryptography.hazmat.primitives.kdf.concatkdf import ConcatKDFHash
@@ -21,23 +22,26 @@ class Node:
     def start(self):
         server_thread = threading.Thread(target=self.run_server)
         server_thread.start()
-
+        time.sleep(0.5)
         self.run_client_interface()
 
     def run_server(self):
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server.bind((self.host, self.port))
         server.listen(5)
+        server.settimeout(1)
         print(f"Node listening on {self.host}:{self.port}")
 
         while self.running:
             try:
-                connection, address = server.accept()
+                connection, _ = server.accept()
                 threading.Thread(target=self.handle_connection, args=(connection,)).start()
-            except:
-                if self.running:
-                    print("Server socket closed unexpectedly")
-                break
+            except socket.timeout:
+                continue
+            except OSError as e:
+                if not self.running:
+                    break
+                print(f"Server error: {e}")
 
         server.close()
 
@@ -49,7 +53,7 @@ class Node:
             client_port = None
             if "from" in client_hello_message:
                 client_port = int(client_hello_message.split("from")[1].strip())
-            print(f"New connection from {connection.getpeername()} (origin port: {client_port})")
+            print(f"\nNew connection from {connection.getpeername()} (origin port: {client_port})")
 
             server_random = os.urandom(16)
             server_hello = b"Server hello" + server_random
@@ -185,8 +189,8 @@ class Node:
         while self.running:
             try:
                 command = input("\nEnter command: ").strip().split()
-                if not command:
-                    continue
+                if not self.running:
+                    break
 
                 if command[0] == "connect" and len(command) == 3:
                     host = command[1]
@@ -208,6 +212,7 @@ class Node:
                     self.running = False
                     for conn, _ in self.connections.values():
                         conn.close()
+                    
                     break
 
                 else:
